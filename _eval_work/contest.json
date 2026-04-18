@@ -3,7 +3,7 @@
   "model_name": "Qwen3-32B",
   "model_path": "/mnt/model/Qwen3-32B",
   "contestant_port": 9000,
-  "duration_s": 45,
+  "duration_s": 35,
   "sla_levels": {
     "Bronze": {
       "latency_max": 10

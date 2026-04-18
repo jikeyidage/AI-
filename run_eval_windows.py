@@ -41,24 +41,36 @@ VLLM_PORT = 8000
 _PACK_EXCLUDE = {"__pycache__", ".pytest_cache", ".DS_Store"}
 
 
-def _pack_filter(tarinfo: tarfile.TarInfo) -> "tarfile.TarInfo | None":
-    name = os.path.basename(tarinfo.name.rstrip("/"))
-    if name in _PACK_EXCLUDE or name.endswith(".pyc"):
-        return None
-    return tarinfo
+def _make_pack_filter(include_draft: bool):
+    def _pack_filter(tarinfo: tarfile.TarInfo):
+        # tarinfo.name is relative to the archive root ("draft_model/config.json")
+        parts = tarinfo.name.split("/")
+        top = parts[0] if parts else ""
+        if top == "draft_model" and not include_draft:
+            return None
+        name = os.path.basename(tarinfo.name.rstrip("/"))
+        if name in _PACK_EXCLUDE or name.endswith(".pyc"):
+            return None
+        return tarinfo
+    return _pack_filter
 
 
-def package_submission(dest_tar: str):
+def package_submission(dest_tar: str, include_draft: bool = False):
     """Create a .tar.gz of submission/ contents (NOT the submission/ dir itself)."""
     if os.path.exists(dest_tar):
         os.remove(dest_tar)
+    flt = _make_pack_filter(include_draft)
     with tarfile.open(dest_tar, "w:gz") as tf:
         for name in os.listdir(SUBMISSION_DIR):
             if name in _PACK_EXCLUDE:
                 continue
-            tf.add(os.path.join(SUBMISSION_DIR, name), arcname=name, filter=_pack_filter)
+            if name == "draft_model" and not include_draft:
+                continue
+            tf.add(os.path.join(SUBMISSION_DIR, name), arcname=name, filter=flt)
+    size_mb = os.path.getsize(dest_tar) / (1024 * 1024)
     size_kb = os.path.getsize(dest_tar) / 1024
-    print(f"[pack] {dest_tar}  ({size_kb:.1f} KB)")
+    size_str = f"{size_mb:.1f} MB" if size_mb >= 1 else f"{size_kb:.1f} KB"
+    print(f"[pack] {dest_tar}  ({size_str})  include_draft={include_draft}")
 
 
 def extract_submission(archive: str, dest_dir: str):
@@ -141,6 +153,8 @@ def main():
                     help="Python executable to use (defaults to inference env)")
     ap.add_argument("--mock-latency-ms", type=int, default=20,
                     help="Per-request latency to simulate in mock_vllm")
+    ap.add_argument("--include-draft", action="store_true",
+                    help="Include submission/draft_model/ in the tarball (for real-run packaging)")
     args = ap.parse_args()
 
     platform_url = f"http://127.0.0.1:{PLATFORM_PORT}"
@@ -169,7 +183,7 @@ def main():
     # Phase 1: pack + extract
     print("\n=== Phase 1: pack + extract ===")
     try:
-        package_submission(archive)
+        package_submission(archive, include_draft=args.include_draft)
         result["pack_ok"] = True
         extract_submission(archive, ext_dir)
         result["extract_ok"] = True

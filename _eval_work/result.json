@@ -1,16 +1,16 @@
 {
   "team": "test_team",
-  "duration_s": 45,
+  "duration_s": 35,
   "pack_ok": true,
   "extract_ok": true,
   "platform_ok": true,
   "mock_vllm_ok": true,
   "client_ok": true,
-  "score": 0.0,
-  "tasks_completed": 0,
-  "tasks_accepted": 0,
-  "avg_latency_ms": 0.0,
+  "score": 138.0,
+  "tasks_completed": 138,
+  "tasks_accepted": 139,
+  "avg_latency_ms": 74.3,
   "error": null,
-  "sla_ok": 0,
-  "sla_late": 3
+  "sla_ok": 138,
+  "sla_late": 0
 }

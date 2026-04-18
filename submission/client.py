@@ -14,6 +14,7 @@ Task types:
 """
 
 import asyncio
+import collections
 import json
 import logging
 import os
@@ -59,6 +60,22 @@ SLA_TTFT = {
     "Diamond": 2.0, "Stellar": 1.5, "Glorious": 0.8, "Supreme": 0.5,
 }
 
+# Tier 4: optional strategy controls
+# ----------------------------------
+# SKIP_SLA_TIERS: comma-separated list of SLA tiers to skip (/query returns
+#   a task at this tier → we don't /ask, call /query again). Default empty:
+#   always try, since LATE is 0-score with no penalty (strictly better than
+#   not-submitting which incurs -2x reward).
+SKIP_SLA_TIERS = set(
+    t.strip() for t in os.environ.get("SKIP_SLA_TIERS", "").split(",") if t.strip()
+)
+# SHORT_GEN_NOTHINK_THRESHOLD: if a generate_until task's max_gen_toks is
+#   below this, prepend "</think>\n\n" to the prompt to force Qwen3 out of
+#   thinking mode, trading some reasoning quality for guaranteed answer
+#   emission inside the token budget. 0 disables this behavior (default).
+#   Recommended values if enabling: 128 or 256.
+SHORT_GEN_NOTHINK_THRESHOLD = int(os.environ.get("SHORT_GEN_NOTHINK_THRESHOLD", "0"))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -71,7 +88,13 @@ log = logging.getLogger("client")
 # ---------------------------------------------------------------------------
 shutdown_event = asyncio.Event()
 inflight_sem: asyncio.Semaphore  # initialized in main()
-stats = {"queried": 0, "accepted": 0, "submitted": 0, "failed": 0}
+stats = {"queried": 0, "accepted": 0, "submitted": 0, "failed": 0,
+         "skipped_tier": 0, "thinking_truncated": 0}
+# Per-SLA-tier running stats: {tier: {"count": int, "ok": int, "late": int,
+#                                      "lat_sum": float, "lat_max": float}}
+sla_stats: dict = collections.defaultdict(
+    lambda: {"count": 0, "ok": 0, "late": 0, "lat_sum": 0.0, "lat_max": 0.0}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -131,11 +154,20 @@ async def do_generate_until(client: httpx.AsyncClient, msg: dict) -> None:
     """Handle generate_until: call vLLM completions API."""
     gen_kwargs = msg.get("eval_gen_kwargs") or {}
     prompt = msg.get("prompt", "")
+    max_toks = gen_kwargs.get("max_gen_toks", 256)
+
+    # Tier 4 (opt-in): on tight token budgets, force Qwen3 out of thinking
+    # mode by pre-closing a <think> block. The extractor scores the textual
+    # answer, so losing chain-of-thought costs some reasoning quality but
+    # guarantees the answer actually appears inside max_tokens. Threshold=0
+    # disables this (default).
+    if SHORT_GEN_NOTHINK_THRESHOLD > 0 and max_toks < SHORT_GEN_NOTHINK_THRESHOLD:
+        prompt = prompt + "<think>\n\n</think>\n\n"
 
     request_body = {
         "model": MODEL_NAME,
         "prompt": prompt,
-        "max_tokens": gen_kwargs.get("max_gen_toks", 256),
+        "max_tokens": max_toks,
         "stop": gen_kwargs.get("until", []),
     }
 
@@ -177,6 +209,12 @@ async def do_generate_until(client: httpx.AsyncClient, msg: dict) -> None:
     for stop in stop_tokens:
         if text.endswith(stop):
             text = text[: -len(stop)]
+
+    # Tier 4 detection: if Qwen3 opened a <think> block and never closed it,
+    # the final answer probably didn't fit in max_gen_toks → we'll be judged
+    # on incomplete output. Just count it; the extractor handles the tags.
+    if "<think>" in text and "</think>" not in text:
+        stats["thinking_truncated"] += 1
 
     msg["response"] = text
 
@@ -327,6 +365,14 @@ async def process_task(
         submit_resp.raise_for_status()
 
         stats["submitted"] += 1
+        tier_stats = sla_stats[sla_name]
+        tier_stats["count"] += 1
+        tier_stats["lat_sum"] += elapsed
+        tier_stats["lat_max"] = max(tier_stats["lat_max"], elapsed)
+        if within_sla:
+            tier_stats["ok"] += 1
+        else:
+            tier_stats["late"] += 1
         level = "INFO" if within_sla else "WARNING"
         log.log(
             logging.getLevelName(level),
@@ -410,6 +456,12 @@ async def fetcher(
                 if not task_id:
                     continue
 
+                # Tier 4 skip: optionally bail out on SLA tiers we can't meet.
+                # Default SKIP_SLA_TIERS is empty → always try (LATE>=skip).
+                if target_sla in SKIP_SLA_TIERS:
+                    stats["skipped_tier"] += 1
+                    continue
+
                 # Ask (bid) - preliminary: must match target_sla exactly
                 ask_resp = await platform_client.post(
                     f"{PLATFORM_URL}/ask",
@@ -467,13 +519,32 @@ async def _worker_wrapper(
 # Stats reporter
 # ---------------------------------------------------------------------------
 async def stats_reporter():
-    """Periodically log statistics."""
+    """Periodically log statistics: global counters + per-SLA-tier breakdown."""
     while not shutdown_event.is_set():
         await asyncio.sleep(30)
         log.info(
             f"Stats: queried={stats['queried']} accepted={stats['accepted']} "
-            f"submitted={stats['submitted']} failed={stats['failed']}"
+            f"submitted={stats['submitted']} failed={stats['failed']} "
+            f"skipped={stats['skipped_tier']} thinking_trunc={stats['thinking_truncated']}"
         )
+        # Tier 4: per-SLA breakdown. Ordered high→low so tight SLAs are obvious.
+        tier_order = ["Supreme", "Glorious", "Stellar", "Diamond",
+                      "Platinum", "Gold", "Silver", "Bronze"]
+        lines = []
+        for tier in tier_order:
+            s = sla_stats.get(tier)
+            if not s or s["count"] == 0:
+                continue
+            avg_lat = s["lat_sum"] / s["count"]
+            target = SLA_TTFT.get(tier, 0)
+            pass_rate = 100.0 * s["ok"] / s["count"]
+            lines.append(
+                f"  {tier:8s} n={s['count']:>4d} ok={s['ok']:>4d} late={s['late']:>4d} "
+                f"pass={pass_rate:5.1f}% avg={avg_lat:.2f}s max={s['lat_max']:.2f}s "
+                f"(target={target}s)"
+            )
+        if lines:
+            log.info("SLA breakdown:\n" + "\n".join(lines))
 
 
 # ---------------------------------------------------------------------------
@@ -534,8 +605,22 @@ async def main():
 
     log.info(
         f"Final stats: queried={stats['queried']} accepted={stats['accepted']} "
-        f"submitted={stats['submitted']} failed={stats['failed']}"
+        f"submitted={stats['submitted']} failed={stats['failed']} "
+        f"skipped={stats['skipped_tier']} thinking_trunc={stats['thinking_truncated']}"
     )
+    tier_order = ["Supreme", "Glorious", "Stellar", "Diamond",
+                  "Platinum", "Gold", "Silver", "Bronze"]
+    for tier in tier_order:
+        s = sla_stats.get(tier)
+        if not s or s["count"] == 0:
+            continue
+        avg_lat = s["lat_sum"] / s["count"]
+        target = SLA_TTFT.get(tier, 0)
+        pass_rate = 100.0 * s["ok"] / s["count"]
+        log.info(
+            f"  {tier:8s} n={s['count']} ok={s['ok']} late={s['late']} "
+            f"pass={pass_rate:.1f}% avg={avg_lat:.2f}s max={s['lat_max']:.2f}s target={target}s"
+        )
 
 
 def handle_signal(sig, frame):

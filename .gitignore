@@ -1,0 +1,8 @@
+﻿# 模型权重体积过大，不入库；本地打 submission.tar.gz 时仍会包含
+submission/draft_model/*.safetensors
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+

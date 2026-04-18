@@ -1,21 +1,30 @@
 # Future — 待完成的工作
 
-## 高优先级（真实环境才能做）
-- [ ] 4x5090 + Qwen3-32B 真机：验证 vLLM 启动、tp=4 tensor parallel、显存占用
-- [ ] 真机验证 logprob 数学：用已知 prompt/continuation，对比 client 返回的 logprob 与手算值（虽然 mock 已通过，但真实 tokenizer 行为可能有细节差异）
-- [ ] 真机验证 generate_until：检查采样参数（temperature/top_p/top_k）是否正确传递到 vLLM，以及输出是否包含 thinking 标签（应该会）
-- [ ] 用 ubiservice/bin/run_eval.py（Unix 版）在真机上做完整端到端评测
-- [ ] 监控 setup.sh 的 pip 下载时间，确认在 20 分钟限额内；监控 run.sh 拉起 vLLM 的时间（Qwen3-32B BF16 加载）
+## 真机验证清单（最高优先级，本地做不了）
+- [ ] 4x5090 + Qwen3-32B BF16 真机：vLLM tp=4 能起来、显存占用、首任务延迟
+- [ ] 监控 setup.sh 时间（pip install，<20min 限额）
+- [ ] 监控 run.sh 启动时间（CLAUDE.md 说 60s 预算；FP8 在线量化可能额外 +30-60s）
+- [ ] 真机跑一轮基线（QUANT_MODE=fp8 + draft_model 投机解码开）记录：
+  - 每档位 pass% / avg / max 延迟
+  - thinking_trunc 计数（观察 max_gen_toks 是否常被 thinking 吃光）
+  - 实际总得分
+- [ ] 对已知 prompt/continuation 做 logprob 手算对比（验证 mock 已通过但真实 Qwen3-32B tokenizer 无边界异常）
+- [ ] 投机解码接受率统计（查 vLLM 日志）。<50% 就关 SPEC_MODEL；>70% 才真正赚
+
+## 基于真机数据的决策
+- [ ] 如果 Supreme/Glorious 100% LATE 且 GPU 满载：开 SKIP_SLA_TIERS=Supreme,Glorious
+- [ ] 如果 thinking_trunc > 10%：试 SHORT_GEN_NOTHINK_THRESHOLD=256
+- [ ] 如果 FP8 启动吃掉 run.sh 超出 60s 预算：QUANT_MODE=none 回退
+- [ ] 如果 FP8 还不够快：跑 prepare_awq_model.py 下 AWQ，切 QUANT_MODE=awq
+- [ ] 如果分低得多（AWQ 损失质量）：回 FP8 + 更激进的 vLLM 调参
 
 ## 中优先级
-- [ ] 调优 vLLM 参数（max-num-seqs、max-num-batched-tokens、gpu_memory_utilization）
+- [ ] 调优 vLLM 参数（max-num-seqs、max-num-batched-tokens、gpu_memory_utilization）的实际最优值
 - [ ] 调优客户端并发参数（NUM_FETCHERS、MAX_INFLIGHT、QUERY_INTERVAL）
-- [ ] 极端 SLA（Supreme 0.5s）下是否应该跳过某些任务 —— 本地压测显示 tight SLA 下会 LATE 但仍提交，符合赛制预期（LATE 只是不得分，不扣分，比未提交好）
-- [ ] 排查本地联调中出现的偶发 400 Bad Request（可能是 Memurai 并发语义问题，也可能是真实客户端 bug）
-- [ ] max_gen_toks 不够时 thinking 没出完答案的应对策略（[QA.txt:398] 是风险点）
+- [ ] 排查本地联调偶发 400 Bad Request（Memurai 并发语义 / 客户端真实 bug，真机上再看）
+- [ ] NUM_SPEC_TOKENS 调优（默认 5，实测接受率决定）
 
 ## 低优先级
-- [ ] 投机解码（speculative decoding）
 - [ ] 压力测试长时间稳定性
-- [ ] FP8 / INT8 量化（如果显存吃紧）
-- [ ] 本地可选：如果想纯 Windows 验证 bash 执行链，可以装 Git Bash 跑 run.sh
+- [ ] 本地 Git Bash 验证 run.sh 执行链（保险起见）
+- [ ] 考虑预量化 FP8 checkpoint 放 submission 减少启动量化时间（但体积大）
