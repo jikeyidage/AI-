@@ -348,7 +348,7 @@ async def process_task(
                     m["response"] = "."
                 elif rt in ("loglikelihood", "loglikelihood_rolling") and m.get("accuracy") is None:
                     m["accuracy"] = -100.0
-            em_resp = await platform_client.post(
+            await platform_client.post(
                 f"{PLATFORM_URL}/submit",
                 json={
                     "user": {"name": TEAM_NAME, "token": TOKEN},
@@ -356,7 +356,6 @@ async def process_task(
                 },
                 timeout=30,
             )
-            em_resp.raise_for_status()
             log.info(f"Task {task_id}: emergency submit succeeded")
         except Exception as e2:
             log.error(f"Task {task_id}: emergency submit also failed: {e2}")

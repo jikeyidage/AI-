@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "initialPermissionMode": "acceptEdits",
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash",
+      "Git",
+      "Npm",
+      "Pip",
+      "Bash(conda env *)"
+    ],
+    "deny": [
+      "Rm",
+      "Ssh",
+      "Sudo"
+    ]
+  }
+}

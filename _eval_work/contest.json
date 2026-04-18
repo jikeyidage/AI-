@@ -1,0 +1,67 @@
+{
+  "platform_url": "http://127.0.0.1:8003",
+  "model_name": "Qwen3-32B",
+  "model_path": "/mnt/model/Qwen3-32B",
+  "contestant_port": 9000,
+  "duration_s": 45,
+  "sla_levels": {
+    "Bronze": {
+      "latency_max": 10
+    },
+    "Silver": {
+      "latency_max": 8
+    },
+    "Gold": {
+      "latency_max": 6
+    },
+    "Platinum": {
+      "latency_max": 4
+    },
+    "Diamond": {
+      "latency_max": 2
+    },
+    "Stellar": {
+      "latency_max": 1.5
+    },
+    "Glorious": {
+      "latency_max": 0.8
+    },
+    "Supreme": {
+      "latency_max": 0.5
+    }
+  },
+  "sampling_params": {
+    "Deterministic": {
+      "temperature": 0.0,
+      "top_p": 1.0,
+      "top_k": 1,
+      "penalty_repetition": 1.0,
+      "penalty_frequency": 0.0,
+      "penalty_presence": 0.0
+    },
+    "Normal": {
+      "temperature": 0.1,
+      "top_p": 0.9,
+      "top_k": 50,
+      "penalty_repetition": 1.1,
+      "penalty_frequency": 0.2,
+      "penalty_presence": 0.2
+    },
+    "HighEntropy": {
+      "temperature": 0.1,
+      "top_p": 0.95,
+      "top_k": 100,
+      "penalty_repetition": 1.05,
+      "penalty_frequency": 0.0,
+      "penalty_presence": 0.0
+    },
+    "ExtremePenalty": {
+      "temperature": 0.1,
+      "top_p": 0.9,
+      "top_k": 20,
+      "penalty_repetition": 1.8,
+      "penalty_frequency": 1.2,
+      "penalty_presence": 1.2
+    }
+  }
+}
