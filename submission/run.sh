@@ -56,7 +56,7 @@ BASE_ARGS=(
     --max-num-batched-tokens 8192
     --gpu-memory-utilization 0.95
     --max-model-len 8192
-    --disable-log-requests
+    --no-enable-log-requests
     --disable-log-stats
 )
 
@@ -141,13 +141,15 @@ attempt() {
 }
 
 try_all() {
+    # vLLM 0.9+ uses --speculative-config JSON; old --speculative-model / --num-speculative-tokens are gone.
+    local spec_cfg="{\"model\": \"$SPEC_MODEL\", \"num_speculative_tokens\": $NUM_SPEC_TOKENS}"
+
     # Level 1: FP8 + spec decode (fastest)
     if [ "$QUANT_MODE" = "auto" ] || [ "$QUANT_MODE" = "fp8" ]; then
         if [ "$HAS_DRAFT" = "yes" ] && [ "$SPEC_DISABLE" != "1" ]; then
             attempt "L1: FP8 + spec decode" \
                 --quantization fp8 --kv-cache-dtype fp8 \
-                --speculative-model "$SPEC_MODEL" \
-                --num-speculative-tokens "$NUM_SPEC_TOKENS" && return 0
+                --speculative-config "$spec_cfg" && return 0
         fi
         # Level 1b: FP8 without spec
         attempt "L1b: FP8 only" \
@@ -178,8 +180,7 @@ try_all() {
     if [ "$QUANT_MODE" != "bf16_baseline" ]; then
         if [ "$HAS_DRAFT" = "yes" ] && [ "$SPEC_DISABLE" != "1" ]; then
             attempt "L3: BF16 + spec decode" \
-                --speculative-model "$SPEC_MODEL" \
-                --num-speculative-tokens "$NUM_SPEC_TOKENS" && return 0
+                --speculative-config "$spec_cfg" && return 0
         fi
     fi
 

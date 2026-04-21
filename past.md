@@ -71,6 +71,27 @@
 - Emergency submit 的 generate_until 默认从 "" 改为 "."（避免被判为空串恶意提交）
 - 本地联调有过 400 Bad Request（submit 时偶发）根因未定位，可能是 Memurai 下 Redis 并发语义问题，也可能是客户端真实 bug。真机验证前保持警惕
 
+## 2026-04-21（requirements.txt 精确版本化 + --no-deps 保护 Blackwell torch）
+- 用户反馈原 requirements.txt 的 `vllm>=0.8.0 / httpx / transformers / torch` 太模糊，要万无一失的精确版本
+- 关键约束：4x RTX 5090 是 Blackwell (sm_120)，平台预装的 torch 是 cu128 wheel；PyPI 上 `torch==2.7.0` 默认是 cu126 wheel，无 sm_120 kernels，装上去 5090 直接不能用
+- 用户选定方案：`pip install --no-deps vllm==0.9.2`，不碰 torch。vLLM 其他传递依赖（xformers / ray / triton / transformers / tokenizers 等）假设平台已装（因为首次上传 vLLM 已经能跑到 CLI 解析阶段，说明 import 链完整）
+- requirements.txt 改为只列 `vllm==0.9.2` + `httpx==0.27.2`，附详细注释说明 --no-deps 策略
+- setup.sh 重写：
+  - Step 1：python 内联脚本验证 torch / CUDA 可用，不可用就 fail fast
+  - Step 2：查当前 vllm 版本，若已是 0.9.x / 0.10.x / 0.11.x 则保留（避免用 0.9.2 binary 覆盖可能更新的版本），否则 `pip install --no-deps vllm==0.9.2`
+  - Step 3：`pip install httpx==0.27.2`（纯 Python，安全）
+  - Step 4：import sanity check（vllm / httpx / transformers / torch 全部可 import）打印版本
+  - Step 5：保留原来的可选 `DOWNLOAD_SPEC_MODEL=1` 分支
+- vLLM 0.9.2 的 cuda.txt 强制 torch==2.7.0；若平台 torch 是 2.7.0+cu128，`==2.7.0` 的 spec 按 PEP 440 能匹配 local version suffix，不会被判冲突
+- 两个脚本 bash -n 语法检查通过
+
+## 2026-04-21（首次上平台触发 vLLM 0.9+ 参数兼容性修复）
+- 真机反馈：run.sh 的 L1/L1b/L3/L4 四档 vLLM 配置全部启动即退出，根因是 BASE_ARGS 含已废弃的 `--disable-log-requests`
+- 修正 submission/run.sh:59：`--disable-log-requests` → `--no-enable-log-requests`（vLLM 0.9+ 用 argparse BooleanOptionalAction，旧名完全移除）
+- 同步修正投机解码：`--speculative-model "$SPEC_MODEL" --num-speculative-tokens "$NUM_SPEC_TOKENS"` → `--speculative-config "{\"model\": \"$SPEC_MODEL\", \"num_speculative_tokens\": $NUM_SPEC_TOKENS}"`（L1 与 L3 两档同步改）。引入局部变量 `spec_cfg` 供两处复用
+- 核实保留的参数：`--disable-log-stats`（未弃用）、`--quantization fp8`、`--kv-cache-dtype fp8`、`--enable-prefix-caching`、`--enable-chunked-prefill`、`--max-num-seqs`、`--max-num-batched-tokens`、`--gpu-memory-utilization`、`--tensor-parallel-size`、`--served-model-name` 等均未变更
+- bash -n 语法检查通过
+
 ## 2026-04-18（本地联调）
 - 通读 submission 代码，发现并修复 7 个问题：
   - QUERY_INTERVAL 0.05 → 0.2（4 fetcher × 20qps 满足 matcher 32/s 限流）

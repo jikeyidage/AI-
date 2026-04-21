@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "initialPermissionMode": "acceptEdits",
     "allow": [
       "Read",
       "Write",
@@ -9,12 +8,17 @@
       "Git",
       "Npm",
       "Pip",
-      "Bash(conda env *)"
+      "Bash(conda env *)",
+      "WebFetch(domain:docs.vllm.ai)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": [
       "Rm",
       "Ssh",
       "Sudo"
-    ]
+    ],
+    "initialPermissionMode": "acceptEdits"
   }
 }

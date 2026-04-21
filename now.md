@@ -1,7 +1,17 @@
 # Now — 现在在做什么
 
 ## 当前任务
-- Tier 1/2/3/4 全部接入。等待真机验证。
+- 两处关键真机问题已修，等重新上传验证：
+  1. run.sh CLI flags：`--no-enable-log-requests` + `--speculative-config` JSON（vLLM 0.9+ 语法）
+  2. requirements.txt 精确版本化 + setup.sh 改为 `--no-deps vllm==0.9.2`，**不覆盖平台 Blackwell torch**
+- 上平台后第一时间看两类日志：
+  - setup：Step 1 的 `torch {ver}  cuda {ver}` 打印 → 确认 cu128；Step 4 import sanity → 确认 vllm 正常加载
+  - run：`[run] SUCCESS: $SUCCESS_DESC` 落在 L1 / L1b / L3 / L4 哪档
+
+## 当前提交包版本
+- `vllm==0.9.2`（via `--no-deps`，保护平台 Blackwell torch）
+- `httpx==0.27.2`
+- 其余 vLLM 传递依赖（torch / transformers / tokenizers / xformers / ray / triton / ...）全部信任平台预装
 
 ## run.sh 调优开关（env var 控制）
 - `QUANT_MODE=fp8|awq|none`（默认 fp8，Tier 3）
@@ -28,7 +38,9 @@
 - 端到端评测：`python run_eval_windows.py --duration 30 [--mock-latency-ms N]`
 
 ## 关键文件
-- `submission/` — 提交包（client.py, run.sh, setup.sh, requirements.txt）
+- `submission/requirements.txt` — `vllm==0.9.2` + `httpx==0.27.2`，详细注释 --no-deps 策略
+- `submission/setup.sh` — 5 步安装：verify torch → install vllm (--no-deps, skip if 0.9+) → install httpx → import check → optional draft download
+- `submission/run.sh` — 四档 fallback，已全部用 0.9+ CLI flag
 - `mock_vllm.py` — vLLM 替身
 - `start_ubiservice_local.py` — Windows 友好的 ubiservice 启动器
 - `run_eval_windows.py` — Windows 版 run_eval

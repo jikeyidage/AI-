@@ -1,9 +1,13 @@
 # Future — 待完成的工作
 
 ## 真机验证清单（最高优先级，本地做不了）
+- [ ] **重新上传（含 setup.sh + requirements.txt + run.sh 全部更新），确认 setup 通过 + L1/L1b/L3/L4 至少有一档启动成功**
+- [ ] 看 setup.sh Step 1 日志打印的 `torch <ver>  cuda <ver>` —— 记录平台真实 torch 版本（用于将来决策是否调 vllm 精确版本）
+- [ ] 看 setup.sh Step 4 的 import sanity 输出 —— 记录平台 transformers / tokenizers 实际版本
+- [ ] 看 run.sh `[run] SUCCESS: $SUCCESS_DESC` 落在哪档；若只起到 L1b 说明 `--speculative-config` JSON 还有兼容性问题（可能需加 `"method"` 字段如 `"method": "eagle"` 或 `"draft_model"`）
 - [ ] 4x5090 + Qwen3-32B BF16 真机：vLLM tp=4 能起来、显存占用、首任务延迟
-- [ ] 监控 setup.sh 时间（pip install，<20min 限额）
-- [ ] 监控 run.sh 启动时间（CLAUDE.md 说 60s 预算；FP8 在线量化可能额外 +30-60s）
+- [ ] 监控 setup.sh 时间（pip install，<20min 限额；--no-deps vllm 会比带 deps 快很多，因为不下载 torch/xformers 等）
+- [ ] 监控 run.sh 启动时间（CLAUDE.md 说 60s 预算；FP8 在线量化可能额外 +30-60s；四档 fallback 串行尝试也会放大这个预算）
 - [ ] 真机跑一轮基线（QUANT_MODE=fp8 + draft_model 投机解码开）记录：
   - 每档位 pass% / avg / max 延迟
   - thinking_trunc 计数（观察 max_gen_toks 是否常被 thinking 吃光）
